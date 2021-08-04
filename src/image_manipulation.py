@@ -55,7 +55,7 @@ def join_images(
         x_offset = 0 if col == 0 else x_offset
         new_im.paste(im, (x_offset, y_offset))
         x_offset += im.size[0] + padding
-    return new_im
+    return new_im, images[0].size[0], images[0].size[1]
 
 
 def saliency_points_to_image(

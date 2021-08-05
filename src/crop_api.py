@@ -356,6 +356,6 @@ class ImageSaliencyModel(object):
     ):
         with tempfile.NamedTemporaryFile("w+b") as fp:
             print(fp.name)
-            # img.save(fp, img_format)
+            img.save(fp, img_format)
             x_slnxy, y_slncy = self.plot_img_crops(Path(fp.name), **kwargs)
             return x_slnxy, y_slncy

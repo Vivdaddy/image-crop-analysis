@@ -263,6 +263,117 @@ class ImageSaliencyModel(object):
         salient_x, salient_y, = output[
             "salient_point"
         ][0]
+        # img_w, img_h = img.shape[:2]
+
+        logging.info(f"{(img_w, img_h)}, {aspectRatios}, {(salient_x, salient_y)}")
+
+        # Keep aspect ratio same and max dim size 5
+        # fig_h/fig_w = img_h/img_w
+        if img_w > img_h:
+            fig_w = 5
+            fig_h = fig_w * (img_h / img_w)
+        else:
+            fig_h = 5
+            fig_w = fig_h * (img_w / img_h)
+        per_K_rows = 1
+        if n_crops == 1:
+            nrows = n_crops + add_saliency_line
+            ncols = topK + 1
+            fig_width = fig_w * ncols
+            fig_height = fig_h * nrows
+        else:
+            nrows = topK + add_saliency_line
+            ncols = n_crops + 1
+            fig_width = fig_w * ncols
+            fig_height = fig_h * nrows
+
+            if col_wrap:
+                per_K_rows = int(np.ceil((n_crops + 1) / col_wrap))
+                nrows = topK * per_K_rows + add_saliency_line
+                ncols = col_wrap
+                fig_width = fig_w * ncols
+                fig_height = fig_h * nrows
+
+        fig = plt.figure(constrained_layout=False, figsize=(fig_width, fig_height))
+        gs = fig.add_gridspec(nrows, ncols)
+
+        # Sort based on saliency score
+        all_salient_points = output["all_salient_points"]
+        sx, sy, sz = zip(*sorted(all_salient_points, key=lambda x: x[-1], reverse=True))
+        sx = np.asarray(sx)
+        sy = np.asarray(sy)
+        sz = np.asarray(sz)
+        if sample:
+            n_salient_points = len(all_salient_points)
+            p = np.exp(sz)
+            p = p / p.sum()
+            sample_indices = np.random.choice(
+                n_salient_points, size=n_salient_points, replace=False, p=p
+            )
+            sx = sx[sample_indices]
+            sy = sy[sample_indices]
+            sz = sy[sample_indices]
+
+        for t in range(0, topK):
+            salient_x, salient_y, saliency_score = sx[t], sy[t], sz[t]
+            logging.info(f"t={t}: {(salient_x, salient_y, saliency_score)}")
+            if n_crops > 1 or (t == 0 and n_crops == 1):
+                ax_map = fig.add_subplot(gs[t * per_K_rows, 0])
+                ax_map = self.plot_saliency_map(img, all_salient_points, ax=ax_map)
+
+            for i, original_crop in enumerate(output["crops"]):
+                if n_crops == 1:
+                    ax = fig.add_subplot(gs[i, t + 1], sharex=ax_map, sharey=ax_map)
+                else:
+                    ax = fig.add_subplot(
+                        gs[t * per_K_rows + ((i + 1) // ncols), (i + 1) % (ncols)],
+                        sharex=ax_map,
+                        sharey=ax_map,
+                    )
+                aspectRatio = aspectRatios[i]
+                self.plot_crop_area(
+                    img,
+                    salient_x,
+                    salient_y,
+                    aspectRatio,
+                    ax=ax,
+                    original_crop=original_crop,
+                    checkSymmetry=checkSymmetry,
+                )
+                if n_crops == 1:
+                    ax.set_title(f"Saliency Rank: {t+1} | {ax.get_title()}")
+        if add_saliency_line:
+            ax = fig.add_subplot(gs[-1, :])
+            self.plot_saliency_scores_for_index(img, all_salient_points, ax=ax)
+        fig.tight_layout()
+        return salient_x, salient_y
+
+    def no_plot_img_crops(
+        self,
+        img_path,
+        topK=1,
+        aspectRatios=None,
+        checkSymmetry=True,
+        sample=False,
+        col_wrap=None,
+        add_saliency_line=True,
+    ):
+        img = mpimg.imread(img_path)
+        img_h, img_w = img.shape[:2]
+
+        # print(aspectRatios, img_w, img_h)
+
+        if aspectRatios is None:
+            aspectRatios = self.aspectRatios
+
+        if aspectRatios is None:
+            aspectRatios = [0.56, 1.0, 1.14, 2.0, img_h / img_w]
+
+        output = self.get_output(img_path, aspectRatios=aspectRatios)
+        # n_crops = len(output["crops"])
+        salient_x, salient_y, = output[
+            "salient_point"
+        ][0]
         # # img_w, img_h = img.shape[:2]
 
         # logging.info(f"{(img_w, img_h)}, {aspectRatios}, {(salient_x, salient_y)}")
@@ -352,10 +463,14 @@ class ImageSaliencyModel(object):
         self,
         img,
         img_format="JPEG",
+        plot=False,
         **kwargs,
     ):
         with tempfile.NamedTemporaryFile("w+b") as fp:
-            print(fp.name)
+            # print(fp.name)
             img.save(fp, img_format)
-            x_slnxy, y_slncy = self.plot_img_crops(Path(fp.name), **kwargs)
+            if plot:
+                x_slnxy, y_slncy = self.plot_img_crops(Path(fp.name), **kwargs)
+            else:
+                x_slnxy, y_slncy = self.no_plot_img_crops(Path(fp.name), **kwargs)
             return x_slnxy, y_slncy
